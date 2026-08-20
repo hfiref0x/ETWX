@@ -1,4 +1,6 @@
 # ETWX
+[![Build status](https://img.shields.io/appveyor/build/hfiref0x/etwx?logo=appveyor)](https://ci.appveyor.com/project/hfiref0x/etwx)
+![Visitors](https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fhfiref0x%2FETWX&label=Visitors&countColor=%23263759&style=flat)
 
 ## ETW Explorer
 **ETW Explorer** (aka ETWX) is a native Win32 GUI application for inspecting registered ETW providers, active trace sessions, provider metadata and schemas, and captured or replayed ETW events.

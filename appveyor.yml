@@ -1,0 +1,9 @@
+version: 1.0.{build}
+skip_tags: true
+image: Visual Studio 2026
+configuration: Release
+platform: x64
+clone_folder: c:\projects\etwx
+build:
+  project: Source/ETWX.slnx
+  verbosity: minimal
