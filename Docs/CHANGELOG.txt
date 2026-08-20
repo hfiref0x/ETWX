@@ -1,0 +1,38 @@
+v1.0.5 (Aug 19, 2026)
+Github public release
+Internal rearrangement (too much to list here)
+
+v1.0.4 (Jun 13, 2026)
+Complete rewrite of provider metadata display
+Internal rearrangement (too much to list here)
+
+v1.0.3B (Mar 5, 2026)
+Bugfixes
+
+v1.0.3 (Feb 27, 2026)
+Ported to MSVC 2026
+Added viewing metadata for legacy MOF providers
+Multiple bug fixes
+Fixed several bugs with provider metadata display and layout
+Internal rearrangement (too much to list here)
+
+v1.0.2 (Oct 22, 2025)
+Added export of current view
+Added multiple context menu commands to providers/session/livecapture
+Added set live event limit dialog
+Added mof metadata view
+Fixed multiple bugs with provider Xml display and layout
+Multiple internal changes
+
+v1.0.1 (Jun 17, 2025)
+Improved live events capture and display
+Added find event dialog
+Added event id, keyword filter
+Added save to ETL/replay from ETL
+Added browse for provider schema (manifest only)
+Added view manifest Xml for selected provider (incomplete, experimental)
+Added security dialog for providers and sessions
+Bugfixes and internal rearrangement (too much to list here)
+
+v1.0.0 (Jan 21, 2025)
+Initial release
