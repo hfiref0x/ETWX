@@ -3,6 +3,9 @@
 ![Visitors](https://api.visitorbadge.io/api/visitors?path=https%3A%2F%2Fgithub.com%2Fhfiref0x%2FETWX&label=Visitors&countColor=%23263759&style=flat)
 
 ## ETW Explorer
+
+<img src="https://raw.githubusercontent.com/hfiref0x/ETWX/master/Docs/Screenshots/MainWindow.png" width="800" />
+
 **ETW Explorer** (aka ETWX) is a native Win32 GUI application for inspecting registered ETW providers, active trace sessions, provider metadata and schemas, and captured or replayed ETW events.
 
 **Note:** This tool was developed for internal use and specific research workflows. It is maintained on an "as-needed" basis and may lack standard features you might expect. Administrator privileges are highly recommended for broad live-capture coverage; casual users may find the interface and behavior confusing.
