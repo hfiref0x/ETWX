@@ -265,23 +265,23 @@ VOID supUncheckAllProviders(
     VOID);
 
 INT CALLBACK supCompareDetailRows(
-    _In_ const VOID* Element1,
-    _In_ const VOID* Element2);
+    _In_ const VOID * Element1,
+    _In_ const VOID * Element2);
 
 INT CALLBACK supCompareMofSchemaRows(
-    _In_ const VOID* Element1,
-    _In_ const VOID* Element2);
+    _In_ const VOID * Element1,
+    _In_ const VOID * Element2);
 
 INT CALLBACK supCompareSchemaRows(
-    _In_ const VOID* Element1,
-    _In_ const VOID* Element2);
+    _In_ const VOID * Element1,
+    _In_ const VOID * Element2);
 
 INT CALLBACK supCompareLiveRows(
-    _In_ const VOID* Element1,
-    _In_ const VOID* Element2);
+    _In_ const VOID * Element1,
+    _In_ const VOID * Element2);
 
 VOID supSort(
-    _Inout_updates_bytes_(Count* ElementSize) PVOID Base,
+    _Inout_updates_bytes_(Count * ElementSize) PVOID Base,
     _In_ ULONG Count,
     _In_ SIZE_T ElementSize,
     _In_ PSUP_COMPARE_ROUTINE CompareRoutine);
@@ -290,7 +290,7 @@ VOID supParseEventIdFilterText(
     VOID);
 
 VOID supGoToProvider(
-    _In_ CONST GUID* ProviderGuid);
+    _In_ CONST GUID * ProviderGuid);
 
 VOID supRefreshLivePaneIncremental(
     _In_ BOOL bAutoScroll);
@@ -337,7 +337,7 @@ HWND supCreateMetadataDialog(
 
 VOID supRunModalDialog(
     _In_ HWND ParentWindow,
-    _Inout_ HWND* Dialog,
+    _Inout_ HWND * Dialog,
     _In_opt_ HWND FocusControl);
 
 BOOL supRegisterDialogClass(
@@ -371,7 +371,7 @@ SIZE supMeasureText(
 
 HWND supCreateToolbar(
     _In_ HWND hWnd,
-    _Out_ HIMAGELIST* phToolbarImageList);
+    _Out_ HIMAGELIST * phToolbarImageList);
 
 VOID supUpdateToolbarState(
     VOID);
@@ -401,5 +401,17 @@ BOOL supParseUlonglong(
     _In_ LPCWSTR String,
     _Out_ PULONGLONG Value);
 
+BOOL supGetDisplayedLiveEvent(
+    _In_ ULONG DisplayIndex,
+    _Out_ LIVE_EVENT_ROW * EventRow);
+
+VOID supRunHighlightSimulation(VOID);
+
 BOOL supInitializeRichEdit(
     VOID);
+
+BOOL supWriteMiniDump(
+    _In_opt_ PEXCEPTION_POINTERS ExceptionInfo);
+
+LONG WINAPI supUnhandledExceptionFilter(
+    _In_ PEXCEPTION_POINTERS ExceptionInfo);

@@ -222,7 +222,7 @@ LPARAM InitializeUIComponents(
     //
     g_ctx.hTree = CreateWindowEx(0, WC_TREEVIEWW, TEXT(""),
         WS_CHILD | WS_VISIBLE | WS_BORDER | TVS_HASLINES | TVS_SHOWSELALWAYS | TVS_HASBUTTONS | TVS_LINESATROOT | TVS_CHECKBOXES,
-        0, 0, 0, 0, hWnd, (HMENU)ID_TREEVIEW, GetModuleHandle(NULL), NULL);
+        0, 0, 0, 0, hWnd, (HMENU)ID_TREEVIEW, g_ctx.hInstance, NULL);
 
     TreeView_SetExtendedStyle(g_ctx.hTree, TVS_EX_DOUBLEBUFFER, TVS_EX_DOUBLEBUFFER);
 
@@ -234,7 +234,7 @@ LPARAM InitializeUIComponents(
     //
     g_ctx.hList = CreateWindowEx(0, WC_LISTVIEWW, TEXT(""),
         WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_OWNERDATA,
-        0, 0, 0, 0, hWnd, (HMENU)ID_LISTVIEW, GetModuleHandle(NULL), NULL);
+        0, 0, 0, 0, hWnd, (HMENU)ID_LISTVIEW, g_ctx.hInstance, NULL);
 
     ListView_SetExtendedListViewStyle(g_ctx.hList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_INFOTIP | LVS_EX_DOUBLEBUFFER);
 
@@ -246,7 +246,7 @@ LPARAM InitializeUIComponents(
     //
     g_ctx.hStatusBar = CreateWindowEx(0, STATUSCLASSNAME, TEXT(""),
         WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
-        0, 0, 0, 0, hWnd, (HMENU)ID_STATUS_BAR, GetModuleHandle(NULL), NULL);
+        0, 0, 0, 0, hWnd, (HMENU)ID_STATUS_BAR, g_ctx.hInstance, NULL);
     supApplyUIFont(g_ctx.hStatusBar);
 
     //
@@ -730,28 +730,25 @@ LRESULT HandleCommand(
         break;
 
     case ID_CTX_HIGHLIGHT_RELATED:
+
         if (g_ctx.ctxListRow >= 0) {
-
-            haveGuid = FALSE;
-
-            if (supCopyLiveEvent((ULONG)g_ctx.ctxListRow,
-                &liveRow) &&
-                !IsEqualGUID(liveRow.activityId,
-                    GUID_NULL))
-            {
-                g_ctx.highlightActivityId = liveRow.activityId;
-                haveGuid = TRUE;
-            }
-
-            if (haveGuid) {
-                g_ctx.highlightActivityIdActive = TRUE;
-                InvalidateRect(g_ctx.hList, NULL, FALSE);
+            //
+            // Get the ActivityId from the clicked/displayed row.
+            //
+            if (supGetDisplayedLiveEvent((ULONG)g_ctx.ctxListRow, &liveRow)) {
+                if (!IsEqualGUID(liveRow.activityId, GUID_NULL)) {
+                    g_ctx.highlightActivityId = liveRow.activityId;
+                    g_ctx.highlightActivityIdActive = TRUE;
+                    InvalidateRect(g_ctx.hList, NULL, FALSE);
+                    UpdateWindow(g_ctx.hList);
+                }
             }
         }
         break;
 
     case ID_CTX_CLEAR_HIGHLIGHT:
         g_ctx.highlightActivityIdActive = FALSE;
+        g_ctx.highlightActivityId = GUID_NULL;
         InvalidateRect(g_ctx.hList, NULL, FALSE);
         break;
 
@@ -1019,6 +1016,11 @@ LRESULT HandleCommand(
         ShowSystemInformationDialog(hWnd);
         break;
 
+#ifdef _DEBUG
+    case ID_VIEW_HIGHLIGHT_SIMULATION:
+        supRunHighlightSimulation();
+        break;
+#endif
     case ID_MENU_EXIT:
         DestroyWindow(hWnd);
         break;
@@ -1149,8 +1151,6 @@ LRESULT HandleNotify(
     _In_ LPARAM lParam
 )
 {
-    BOOL valid = FALSE;
-    UCHAR level;
     ULONG kind, idx, param;
     LPNMHDR nmhdr;
     LPNMTREEVIEW nmtv;
@@ -1274,58 +1274,84 @@ LRESULT HandleNotify(
 
             pcd = (LPNMLVCUSTOMDRAW)lParam;
 
-            if (!g_ctx.colorizeEnabled ||
-                g_ctx.listMode != LIST_MODE_LIVE)
-            {
+            if (g_ctx.listMode != LIST_MODE_LIVE)
                 return CDRF_DODEFAULT;
-            }
 
+            //
+            // Start ListView custom drawing.
+            //
             if (pcd->nmcd.dwDrawStage == CDDS_PREPAINT)
                 return CDRF_NOTIFYITEMDRAW;
 
-            if (pcd->nmcd.dwDrawStage != CDDS_ITEMPREPAINT ||
-                (pcd->nmcd.uItemState & CDIS_SELECTED))
+            //
+            // Request notifications for individual cells.
+            //
+            if (pcd->nmcd.dwDrawStage == CDDS_ITEMPREPAINT)
+                return CDRF_NOTIFYSUBITEMDRAW;
+
+            //
+            // Draw individual cells.
+            //
+            if (pcd->nmcd.dwDrawStage ==
+                (CDDS_ITEMPREPAINT | CDDS_SUBITEM))
             {
+                BOOL highlighted;
+
+                if (!supGetDisplayedLiveEvent((ULONG)pcd->nmcd.dwItemSpec, &liveRow))
+                    return CDRF_DODEFAULT;
+
+                //
+                // Determine whether this event belongs to the
+                // highlighted ActivityId.
+                //
+                highlighted = g_ctx.highlightActivityIdActive &&
+                    !IsEqualGUID(liveRow.activityId, GUID_NULL) &&
+                    IsEqualGUID(liveRow.activityId, g_ctx.highlightActivityId);
+
+                //
+                // Highlight takes precedence over level coloring.
+                //
+                if (highlighted) {
+                    pcd->clrText = RGB(64, 64, 0);
+                    pcd->clrTextBk = RGB(204, 255, 255);
+                    return CDRF_NEWFONT;
+                }
+
+                //
+                // Normal level colorization.
+                //
+                if (g_ctx.colorizeEnabled) {
+
+                    switch (liveRow.level) {
+
+                    case TRACE_LEVEL_CRITICAL:
+                    case TRACE_LEVEL_ERROR:
+                        pcd->clrText = RGB(192, 0, 0);
+                        break;
+
+                    case TRACE_LEVEL_WARNING:
+                        pcd->clrText = RGB(176, 96, 0);
+                        break;
+
+                    case TRACE_LEVEL_INFORMATION:
+                        pcd->clrText = RGB(0, 80, 160);
+                        break;
+
+                    case TRACE_LEVEL_VERBOSE:
+                        pcd->clrText = RGB(96, 96, 96);
+                        break;
+
+                    default:
+                        return CDRF_DODEFAULT;
+                    }
+
+                    return CDRF_NEWFONT;
+                }
+
                 return CDRF_DODEFAULT;
             }
 
-            valid = FALSE;
-            level = TRACE_LEVEL_NONE;
-
-            EnterCriticalSection(&g_ctx.liveCs);
-
-            if (pcd->nmcd.dwItemSpec < g_ctx.liveEventCount) {
-                liveRow = g_ctx.liveEvents[pcd->nmcd.dwItemSpec];
-                level = liveRow.level;
-                valid = TRUE;
-            }
-
-            LeaveCriticalSection(&g_ctx.liveCs);
-
-            if (!valid)
-                return CDRF_DODEFAULT;
-
-            switch (level) {
-
-            case TRACE_LEVEL_CRITICAL:
-            case TRACE_LEVEL_ERROR:
-                pcd->clrText = RGB(192, 0, 0);
-                break;
-
-            case TRACE_LEVEL_WARNING:
-                pcd->clrText = RGB(176, 96, 0);
-                break;
-
-            case TRACE_LEVEL_INFORMATION:
-                pcd->clrText = RGB(0, 80, 160);
-                break;
-
-            case TRACE_LEVEL_VERBOSE:
-                pcd->clrText = RGB(96, 96, 96);
-                break;
-            }
-
-            return CDRF_NEWFONT;
+            return CDRF_DODEFAULT;
 
         case NM_DBLCLK:
 
@@ -1726,6 +1752,14 @@ int CALLBACK WinMain(
 
     UNREFERENCED_PARAMETER(hPrevInstance);
     UNREFERENCED_PARAMETER(lpCmdLine);
+
+    HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
+    SetUnhandledExceptionFilter(supUnhandledExceptionFilter);
+
+    //
+    // minidump handler test
+    // 
+    //*(volatile ULONG*)NULL = 0xDEADBEEF;
 
     g_Heap = GetProcessHeap();
     if (g_Heap == NULL)

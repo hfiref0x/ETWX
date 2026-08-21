@@ -41,7 +41,7 @@
 #include <tdh.h>
 #include <aclui.h>
 #include <sddl.h>
-#include <winevt.h>
+#include <DbgHelp.h>
 
 #pragma comment(lib, "tdh.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -52,7 +52,8 @@
 #pragma comment(lib, "UxTheme.lib")
 #pragma comment(lib, "wbemuuid.lib")
 #pragma comment(lib, "Aclui.lib")
-#pragma comment(lib, "wevtapi.lib")
+#pragma comment(lib, "Dbghelp.lib")
+
 
 #include "prtl/prtl.h"
 #include "rsrc/resource.h"

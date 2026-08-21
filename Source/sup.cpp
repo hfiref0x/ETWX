@@ -187,6 +187,7 @@ VOID supShowListContextMenu(
     UINT state;
     INT i, selectedCount, itemCount;
     HMENU menuHandle;
+    LIVE_EVENT_ROW liveRow;
 
     //
     // Schema view may be invoked without a specific row.
@@ -240,23 +241,31 @@ VOID supShowListContextMenu(
         AppendMenu(menuHandle, MF_STRING, ID_CTX_GOTO_PROVIDER, TEXT("Go to Provider"));
 
         if (g_ctx.ctxListRow >= 0) {
-            EnterCriticalSection(&g_ctx.liveCs);
-            if ((ULONG)g_ctx.ctxListRow < g_ctx.liveEventCount) {
-                haveActivityId = !IsEqualGUID(g_ctx.liveEvents[g_ctx.ctxListRow].activityId, GUID_NULL);
+            if (supGetDisplayedLiveEvent((ULONG)g_ctx.ctxListRow, &liveRow)) {
+                haveActivityId = !IsEqualGUID(liveRow.activityId, GUID_NULL);
             }
-            LeaveCriticalSection(&g_ctx.liveCs);
         }
+
         AppendMenu(menuHandle, MF_STRING, ID_CTX_COPY_ACTIVITYID, TEXT("Copy ActivityId"));
-
-        if (g_ctx.highlightActivityIdActive) {
-            AppendMenu(menuHandle, MF_STRING, ID_CTX_CLEAR_HIGHLIGHT, TEXT("Clear Highlight"));
-        }
-        else {
-            AppendMenu(menuHandle, MF_STRING, ID_CTX_HIGHLIGHT_RELATED, TEXT("Highlight Related Events"));
-            EnableMenuItem(menuHandle, ID_CTX_HIGHLIGHT_RELATED, MF_BYCOMMAND | (haveActivityId ? MF_ENABLED : MF_GRAYED));
-        }
-
         EnableMenuItem(menuHandle, ID_CTX_COPY_ACTIVITYID, MF_BYCOMMAND | (haveActivityId ? MF_ENABLED : MF_GRAYED));
+
+        //
+        // Highlight Related Events.
+        //
+        // Keep this command available even when a highlight is already active. 
+        // This allows the user to move the highlight directly to another event.
+        //
+        AppendMenu(menuHandle, MF_STRING, ID_CTX_HIGHLIGHT_RELATED, TEXT("Highlight Related Events"));
+        EnableMenuItem(menuHandle, ID_CTX_HIGHLIGHT_RELATED, MF_BYCOMMAND | (haveActivityId ? MF_ENABLED : MF_GRAYED));
+
+        //
+        // Clear Highlight.
+        //
+        // Always show the command, but disable it when there is currently no active highlight.
+        //
+        AppendMenu(menuHandle, MF_STRING, ID_CTX_CLEAR_HIGHLIGHT, TEXT("Clear Highlight"));
+        EnableMenuItem(menuHandle, ID_CTX_CLEAR_HIGHLIGHT, MF_BYCOMMAND | (g_ctx.highlightActivityIdActive ? MF_ENABLED : MF_GRAYED));
+
         break;
     default:
         skipSeparator = TRUE;
@@ -496,7 +505,7 @@ VOID supCopyTextToClipboard(
         if (!text)
             break;
 
-        if (FAILED(StringCchLength(text, STRSAFE_MAX_CCH, &chars))) 
+        if (FAILED(StringCchLength(text, STRSAFE_MAX_CCH, &chars)))
             break;
 
         chars++;
@@ -652,7 +661,7 @@ VOID supUpdateMenuState(
 
     if (g_ctx.hMenuView) {
 
-        EnableMenuItem(g_ctx.hMenuView, ID_MENU_SET_LIVE_EVENT_LIMIT, 
+        EnableMenuItem(g_ctx.hMenuView, ID_MENU_SET_LIVE_EVENT_LIMIT,
             MF_BYCOMMAND | (g_ctx.liveCapturing ? MF_GRAYED : MF_ENABLED));
 
         ModifyMenu(g_ctx.hMenuView,
@@ -765,6 +774,12 @@ VOID supCreateMainMenu(
         AppendMenu(g_ctx.hMenuView, MF_STRING, ID_MENU_SET_LIVE_EVENT_LIMIT, TEXT("Set Live Event &Limit..."));
         AppendMenu(g_ctx.hMenuView, MF_SEPARATOR, 0, NULL);
         AppendMenu(g_ctx.hMenuView, MF_STRING, ID_MENU_SYSTEM_INFORMATION, TEXT("&System Information..."));
+#ifdef _DEBUG
+        //
+        // We need a special debug for this bugfest shit.
+        //
+        AppendMenu(g_ctx.hMenuView, MF_STRING, ID_VIEW_HIGHLIGHT_SIMULATION, TEXT("Highlight Simulation"));
+#endif
         AppendMenu(g_ctx.hMenu, MF_POPUP, (UINT_PTR)g_ctx.hMenuView, TEXT("&View"));
     }
 
@@ -992,7 +1007,7 @@ VOID supLayoutChildren(
         hdwp = DeferWindowPos(hdwp, g_ctx.hEditFilter, NULL, 0, toolbarHeight, treeWidth, filterHeight, SWP_NOZORDER | SWP_NOACTIVATE);
     }
     if (hdwp) {
-        hdwp = DeferWindowPos(hdwp, g_ctx.hTree, NULL, 0, toolbarHeight + filterHeight, treeWidth, 
+        hdwp = DeferWindowPos(hdwp, g_ctx.hTree, NULL, 0, toolbarHeight + filterHeight, treeWidth,
             contentHeight - filterHeight, SWP_NOZORDER | SWP_NOACTIVATE);
     }
     if (hdwp) {
@@ -2444,8 +2459,8 @@ VOID supFormatLiveRowColumn(
     switch (Column) {
 
     case LIVE_COLUMN_TIME:
-        StringCchPrintf(Buffer, BufferChars, TEXT("%02u:%02u:%02u.%03u"), 
-            Row->localTime.wHour, Row->localTime.wMinute, 
+        StringCchPrintf(Buffer, BufferChars, TEXT("%02u:%02u:%02u.%03u"),
+            Row->localTime.wHour, Row->localTime.wMinute,
             Row->localTime.wSecond, Row->localTime.wMilliseconds);
         break;
 
@@ -4383,13 +4398,13 @@ BOOL supMatchLiveEvent(
     }
 
     if (Search->MatchEventId &&
-        Row->eventId != Search->EventId) 
+        Row->eventId != Search->EventId)
     {
         return FALSE;
     }
 
     if (Search->MatchLevel &&
-        Row->level != Search->Level) 
+        Row->level != Search->Level)
     {
         return FALSE;
     }
@@ -4696,15 +4711,241 @@ BOOL supParseUlonglong(
     return TRUE;
 }
 
+/*
+* supGetDisplayedLiveEvent
+*
+* Purpose:
+*
+* Retrieves the live event corresponding to a displayed ListView row.
+* Used for highlighting events for a live capture view.
+*
+*/
+BOOL supGetDisplayedLiveEvent(
+    _In_ ULONG DisplayIndex,
+    _Out_ LIVE_EVENT_ROW * EventRow
+)
+{
+    ULONG eventIndex;
+
+    if (!EventRow)
+        return FALSE;
+
+    RtlSecureZeroMemory(EventRow, sizeof(LIVE_EVENT_ROW));
+
+    EnterCriticalSection(&g_ctx.liveCs);
+
+    if (DisplayIndex >= g_ctx.liveDisplayedCount) {
+        LeaveCriticalSection(&g_ctx.liveCs);
+        return FALSE;
+    }
+
+    //
+    // Normally the displayed row maps through liveSortedIndices.
+    //
+    if (g_ctx.liveSortedIndices &&
+        DisplayIndex < g_ctx.liveSortedIndexCount)
+    {
+        eventIndex = g_ctx.liveSortedIndices[DisplayIndex];
+    }
+    else {
+        eventIndex = DisplayIndex;
+    }
+
+    if (eventIndex >= g_ctx.liveEventCount) {
+        LeaveCriticalSection(&g_ctx.liveCs);
+        return FALSE;
+    }
+
+    *EventRow = g_ctx.liveEvents[eventIndex];
+
+    LeaveCriticalSection(&g_ctx.liveCs);
+
+    return TRUE;
+}
 
 /*
- * supInitializeRichEdit
- *
- * Purpose:
- *
- * Just load richedit dll.
- *
- */
+* supRunHighlightSimulation
+*
+* Purpose:
+*
+* Debug routine used during highlight tests.
+*
+*/
+VOID supRunHighlightSimulation(
+    VOID
+)
+{
+    static const GUID ActivityA =
+    {
+        0xaaaaaaaa, 0xaaaa, 0xaaaa,
+        { 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa }
+    };
+
+    static const GUID ActivityB =
+    {
+        0xbbbbbbbb, 0xbbbb, 0xbbbb,
+        {  0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb }
+    };
+
+    static const GUID ActivityC =
+    {
+        0xcccccccc, 0xcccc, 0xcccc,
+        { 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc }
+    };
+
+    LIVE_EVENT_ROW* events = NULL;
+    ULONG* sortedIndices = NULL;
+
+    //
+    // Do not modify the live-event buffers while an actual
+    // capture is running.
+    //
+    if (InterlockedCompareExchange(&g_ctx.liveCapturing, 0, 0) != 0) {
+        MessageBox(g_ctx.hMainWnd,
+            TEXT("Stop the live capture before running the highlight simulation."),
+            TEXT("Highlight Simulation"),
+            MB_OK | MB_ICONINFORMATION);
+
+        return;
+    }
+
+    //
+    // Allocate the simulation buffers first. This way, if an
+    // allocation fails, the existing live-event state is left
+    // untouched.
+    //
+    events = (LIVE_EVENT_ROW*)supHeapAlloc(sizeof(LIVE_EVENT_ROW) * 5);
+    sortedIndices = (ULONG*)supHeapAlloc(sizeof(ULONG) * 5);
+    if (!events || !sortedIndices) {
+
+        if (events)
+            supHeapFree(events);
+
+        if (sortedIndices)
+            supHeapFree(sortedIndices);
+
+        MessageBox(g_ctx.hMainWnd,
+            TEXT("Unable to allocate highlight simulation data."),
+            TEXT("Highlight Simulation"),
+            MB_OK | MB_ICONERROR);
+
+        return;
+    }
+
+    //
+    // Five deterministic events.
+    //
+    //
+    // Event 0 -> Activity A
+    // Event 1 -> Activity B
+    // Event 2 -> Activity A
+    // Event 3 -> Activity C
+    // Event 4 -> Activity A
+    //
+    events[0].activityId = ActivityA;
+    events[1].activityId = ActivityB;
+    events[2].activityId = ActivityA;
+    events[3].activityId = ActivityC;
+    events[4].activityId = ActivityA;
+
+    //
+    // Give every event a different level so that the existing
+    // "Colorize by Level" functionality can be tested at the
+    // same time as highlighting.
+    //
+    events[0].level = TRACE_LEVEL_INFORMATION;
+    events[1].level = TRACE_LEVEL_WARNING;
+    events[2].level = TRACE_LEVEL_ERROR;
+    events[3].level = TRACE_LEVEL_VERBOSE;
+    events[4].level = TRACE_LEVEL_CRITICAL;
+
+    //
+    // Initial display order:
+    //
+    // Display 0 -> Event 3 -> Activity C
+    // Display 1 -> Event 1 -> Activity B
+    // Display 2 -> Event 4 -> Activity A
+    // Display 3 -> Event 0 -> Activity A
+    // Display 4 -> Event 2 -> Activity A
+    //
+    sortedIndices[0] = 3;
+    sortedIndices[1] = 1;
+    sortedIndices[2] = 4;
+    sortedIndices[3] = 0;
+    sortedIndices[4] = 2;
+
+    //
+    // Replace the existing live-event buffers.
+    //
+    EnterCriticalSection(&g_ctx.liveCs);
+
+    if (g_ctx.liveEvents) {
+        supHeapFree(g_ctx.liveEvents);
+        g_ctx.liveEvents = NULL;
+    }
+
+    if (g_ctx.liveSortedIndices) {
+        supHeapFree(g_ctx.liveSortedIndices);
+        g_ctx.liveSortedIndices = NULL;
+    }
+
+    g_ctx.liveEvents = events;
+    g_ctx.liveEventCount = 5;
+    g_ctx.liveEventCapacity = 5;
+    g_ctx.liveSortedIndices = sortedIndices;
+    g_ctx.liveSortedIndexCount = 5;
+    g_ctx.liveDisplayedCount = 5;
+
+    //
+    // Reset the display-generation state because we are
+    // replacing the complete virtual-list data set.
+    //
+    g_ctx.liveEventGeneration++;
+    g_ctx.liveDisplayedGeneration = g_ctx.liveEventGeneration;
+
+    g_ctx.liveEventTotalCount = 5;
+
+    LeaveCriticalSection(&g_ctx.liveCs);
+
+    g_ctx.listMode = LIST_MODE_LIVE;
+    g_ctx.showingLivePane = TRUE;
+    g_ctx.showingSchemaPane = FALSE;
+    g_ctx.colorizeEnabled = TRUE;
+    g_ctx.highlightActivityId = GUID_NULL;
+    g_ctx.highlightActivityIdActive = FALSE;
+    g_ctx.ctxListRow = -1;
+    ListView_SetItemCountEx(g_ctx.hList, (INT)g_ctx.liveDisplayedCount, 0);
+
+    InvalidateRect(g_ctx.hList, NULL, TRUE);
+    UpdateWindow(g_ctx.hList);
+    SetFocus(g_ctx.hList);
+
+    MessageBox(g_ctx.hMainWnd,
+        TEXT(
+            "Highlight simulation loaded.\n\n"
+            "Five events were inserted using three ActivityIds:\n\n"
+            "  Activity A - events 0, 2, 4\n"
+            "  Activity B - event 1\n"
+            "  Activity C - event 3\n\n"
+            "Initial display order:\n"
+            "  C, B, A, A, A\n\n"
+            "Right-click an A event and select:\n"
+            "  Highlight Related Events\n\n"
+            "Then sort the ListView and verify that all A events "
+            "remain highlighted."
+        ),
+        TEXT("Highlight Simulation"),
+        MB_OK | MB_ICONINFORMATION);
+}
+
+/*
+* supInitializeRichEdit
+*
+* Purpose:
+*
+* Just load richedit dll.
+*
+*/
 BOOL supInitializeRichEdit(
     VOID
 )
@@ -4714,4 +4955,118 @@ BOOL supInitializeRichEdit(
     hRichEdit = LoadLibrary(TEXT("Msftedit.dll"));
 
     return hRichEdit != NULL;
+}
+
+/*
+* supWriteMiniDump
+*
+* Purpose:
+*
+* Write a minidump containing the current process state and,
+* when available, the exception information supplied by the
+* unhandled exception filter.
+*
+*/
+BOOL supWriteMiniDump(
+    _In_opt_ PEXCEPTION_POINTERS ExceptionInfo
+)
+{
+    BOOL bResult = FALSE;
+    HANDLE hFile = INVALID_HANDLE_VALUE;
+    WCHAR dumpPath[MAX_PATH];
+    WCHAR tempPath[MAX_PATH];
+    WCHAR fileName[64];
+    SYSTEMTIME systemTime;
+    MINIDUMP_EXCEPTION_INFORMATION exceptionInfo;
+    MINIDUMP_TYPE dumpType;
+
+    RtlSecureZeroMemory(&exceptionInfo, sizeof(exceptionInfo));
+    RtlSecureZeroMemory(&systemTime, sizeof(systemTime));
+
+    //
+    // Get a writable temporary directory.
+    //
+    if (GetTempPath(ARRAYSIZE(tempPath), tempPath) == 0)
+        return FALSE;
+
+    //
+    // Create a unique filename containing the timestamp
+    // and current process ID.
+    //
+    GetLocalTime(&systemTime);
+
+    StringCchPrintf(fileName,
+        ARRAYSIZE(fileName),
+        TEXT("ETWX_%04hu%02hu%02hu_%02hu%02hu%02hu_%lu.dmp"),
+        systemTime.wYear,
+        systemTime.wMonth,
+        systemTime.wDay,
+        systemTime.wHour,
+        systemTime.wMinute,
+        systemTime.wSecond,
+        GetCurrentProcessId());
+
+    if (FAILED(StringCchPrintf(dumpPath,
+        ARRAYSIZE(dumpPath),
+        TEXT("%s%s"),
+        tempPath,
+        fileName)))
+    {
+        return FALSE;
+    }
+
+    hFile = CreateFile(dumpPath,
+        GENERIC_WRITE,
+        FILE_SHARE_READ,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+
+    if (hFile == INVALID_HANDLE_VALUE)
+        return FALSE;
+
+    if (ExceptionInfo) {
+        exceptionInfo.ThreadId = GetCurrentThreadId();
+        exceptionInfo.ExceptionPointers = ExceptionInfo;
+        exceptionInfo.ClientPointers = FALSE;
+    }
+
+    dumpType = (MINIDUMP_TYPE)(MiniDumpWithDataSegs |
+        MiniDumpWithHandleData |
+        MiniDumpWithThreadInfo |
+        MiniDumpWithUnloadedModules |
+        MiniDumpWithProcessThreadData |
+        MiniDumpWithIndirectlyReferencedMemory |
+        MiniDumpScanMemory);
+
+    bResult = MiniDumpWriteDump(GetCurrentProcess(),
+        GetCurrentProcessId(),
+        hFile,
+        dumpType,
+        ExceptionInfo ? &exceptionInfo : NULL,
+        NULL,
+        NULL);
+
+    CloseHandle(hFile);
+
+    return bResult;
+}
+
+/*
+* supUnhandledExceptionFilter
+*
+* Purpose:
+*
+* Handle unhandled process exceptions by writing a minidump
+* containing the exception context and then terminating the
+* process.
+*
+*/
+LONG WINAPI supUnhandledExceptionFilter(
+    _In_ PEXCEPTION_POINTERS ExceptionInfo
+)
+{
+    supWriteMiniDump(ExceptionInfo);
+    return EXCEPTION_EXECUTE_HANDLER;
 }
