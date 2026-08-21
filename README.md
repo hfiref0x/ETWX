@@ -69,6 +69,10 @@
 * Persists window placement, capture levels, keyword filters, and Event ID filters under HKCU\Software\ETWX.
 * Supports self-relaunch through the Shell `runas` verb when elevated access is required.
 
+# What is new
+
+[Complete changelog](https://github.com/hfiref0x/ETWX/blob/master/Docs/CHANGELOG.txt)
+
 # Build
 
 * Visual Studio 2026 with the **C++ desktop workload** and the configured x64 MSVC toolset.
