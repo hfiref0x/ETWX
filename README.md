@@ -92,7 +92,7 @@ Source/
   types.h           Provider/session/schema/live-event backing-store types.
   const.h           Commands, limits, view columns, timers, node encoding, and program constants.
   capture.h         Capture/replay entry points.
-  etwmeta.h         ETW/TDH/EVT/WMI-facing application interfaces.
+  etwmeta.h         ETW/TDH/WMI-facing application interfaces.
   security.h        Interface for the system security dialog implementation.
   sup.h             Shared support/UI helper interfaces.
   commonDlg.h       Common-dialog interfaces.
